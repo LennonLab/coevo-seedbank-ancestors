@@ -2,41 +2,77 @@
 title: "Growth curves"
 output: html_notebook
 editor_options: 
-  chunk_output_type: inline
+    code_folding: hide
+    chunk_output_type: inline
 ---
 Growth curves for $\Delta$6$-\Delta$SpoIIE and $\Delta$6-WT
 ```{r, message=FALSE}
-rm(list = ls())
+library(here)
 library(tidyverse)
+library(lubridate)
 library(broom)
 library(cowplot)
-setwd("C:/Users/danschw/Box/Lab/research/Bacillus phage/coevolution/growth_curve")
 ```
 
-## growth in LB and DSM (+Cm)  
+## Read data from plate reade file  
 
 ```{r, message=FALSE}
-input <- read_csv("20200305_spoIIE_d6.csv")
-#time in hours
-input$Time <- 24*input$Time
-    
-    #############
-    #average OD #
-    #############
-# remove last rows so it divides by 8
-input <- input[1:(8*floor(nrow(input)/8)),]
-input.avg <- input[0,]
-for(i in seq(nrow(input)/8)){
-  row1 <- i*8-7
-  input.avg[i,] <- apply(input[row1:(row1+7),], 2,mean)
-  
-}
+# read this file
+xpt.file <- here("data", "growth-curve", "OD600_96well_16hr_37dC_shake_20200305.txt")
+
+# number of times plate was read
+xpt.reads = grep("Reads", readLines(xpt.file), value = T)%>%
+  str_remove(pattern = ".*,") %>% parse_number()
+
+# start line of OD table
+start.line = grep("^Time.*A1", readLines(xpt.file))
+
+# end line of OD table
+aprox.end.line.n= floor(start.line+xpt.reads)-start.line
+
+# read data and organize it
+input <- 
+  read_tsv(xpt.file,
+       skip = start.line-1,
+       n_max = aprox.end.line.n-1,
+       col_types = cols(Time = "c"))%>%
+  # rename temp column
+    rename("temp"=2)%>%
+  # Convert time to hms
+    mutate(Time=lubridate::hms(Time))%>%
+    mutate(Time=as.duration(Time))%>%
+  # remove empty lines
+    filter(Time != 0)
+
+```
+
+In these files there are reads evry 2 min. I will avearge on window of 8 reads.
+```{r, message=FALSE}
+# window size
+win <- 8
+
+#number of points after averaging
+n.group <-floor( nrow(input)/win)
+
+# remove last rows so it divides by win
+input <- input[1:(win*n.group),]
+
+input.avg <- 
+  input%>%
+  #add grouping variable 
+    mutate(g=ntile(1:(win*n.group),n.group))%>%
+    group_by(g)%>%
+    summarise(across(where(is.numeric), ~ mean(.x, na.rm = TRUE)))%>%
+  #remove grouping var
+    select(-g) %>%
+  # convert time to hours
+    mutate(Time = Time/3600)
 
 #trnaform to long format
 d <- gather(input.avg, key="well", value = "OD600", colnames(input)[-c(1:2)])
 
 #add metadata
-meta <- read_csv("20200305_spoIIE_d6_layout.csv")
+meta <- read_csv(here("data", "growth-curve","20200305_spoIIE_d6_layout.csv"))
 d <-merge(d, meta)
 ```
 
@@ -56,8 +92,8 @@ d%>%
 
 A few wells were ouliers and need to be filtered out:  
 * coloumn 6 and 11 well got lower volume of input due to protocol error.
-* Wells B2 and D8 probably has some particulate matter  
-* blanks of A7 and H8  
+* Wells B2 and D8 probably had some particulate matter  
+* blanks of A7 and H8, seem contaminated  
 
 ```{r, message=FALSE}
 
@@ -66,17 +102,24 @@ outlier.wells <-
   filter(col==6|col==11|well=="D8"|well=="A7"|well=="H8"|well=="B2")%>%
   select(well)%>%
   deframe()
+
+d <- d%>%
+  filter(!(well%in%outlier.wells))%>%
   
 ```
 
+Verify that initial OD was simmmilar across strains and replicates
 ```{r, message=FALSE}
-d%>%
+
+d%>%  
   filter(Time==min(d$Time))%>%
-  filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=col, y=OD600))+
-    geom_col(aes(fill=interaction(strain,colony, media)))+
-    theme_cowplot()+
-    facet_grid(row~.)
+  ggplot(aes(x=colony, y=OD600))+
+  geom_boxplot()+
+  geom_jitter(width = .2, shape=21, size=2, fill= "white")+
+  theme_cowplot()+
+    panel_border()+
+    facet_grid(media ~ strain, scales = "free")+
+  ylim(0,NA)
 
 ```
 
@@ -156,7 +199,7 @@ blank <- input.avg%>%
   select(export.meta$well[export.meta$strain=="blank"])
 blank <- blank[1]
 
-write_tsv(cbind (Min,blank,export), path = "GrowthRate/LB.txt")
+write_tsv(cbind (Min,blank,export), file =  here("data/growth-curve","GrowthRates/LB.txt"))
 
 #DSM
 export.meta <- 
@@ -174,15 +217,15 @@ blank <- input.avg%>%
   select(export.meta$well[export.meta$strain=="blank"])
 blank <- blank[1]
 
-write_tsv(cbind (Min,blank,export), path = "GrowthRate/DSM.txt")
+write_tsv(cbind (Min,blank,export), file = here("data/growth-curve","GrowthRates/DSM.txt"))
 
 ```
 
 I have run GrowthRates externally and will now import the results into R.  (GrowthRates commands: GrowthRates -i LB.txt -w 1; GrowthRates -i DSM.txt -w 1)
 
 ```{r, echo=FALSE, message=FALSE}
-lb.gr <- read_tsv("GrowthRate/LB.summary", skip=1)
-dsm.gr <- read_tsv("GrowthRate/DSM.summary", skip=1)
+lb.gr <- read_tsv(here("data/growth-curve","GrowthRates/LB.summary"), skip=1)
+dsm.gr <- read_tsv(here("data/growth-curve","GrowthRates/DSM.summary"), skip=1)
 
 gr <- left_join(meta,rbind(lb.gr, dsm.gr), by=c("well"="Well"))
 
@@ -190,13 +233,15 @@ gr %>%
   filter(strain!="blank")%>%
   filter(!(well%in%outlier.wells))%>%
   # mutate(strain=fct_rev(strain))%>%
-  ggplot(aes(x=colony, y=Rate))+
-  geom_jitter( aes(color=strain, shape=colony),size=3, height=0, width=0.3, fill="white")+
+  ggplot(aes(x=strain, y=Rate))+
+  geom_boxplot()+
+  geom_jitter( aes(color=colony, shape=colony),size=3, height=0, width=0.3, fill="white")+
   theme_cowplot()+panel_border()+
   # coord_flip()+
   scale_shape_manual(values = c(21,22,24))+
-  facet_grid(media~strain, scales = "free_y")+
+  facet_wrap(~media, )+
     theme(axis.text.x = element_text(angle=90, vjust = 0.5))+
+  ylim(0,NA)+
   ylab("Growth Rate")
 
 ```
@@ -206,13 +251,15 @@ gr %>%
 gr %>%
   filter(strain!="blank")%>%
   filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=colony, y=`lag time (minutes)`))+
-  geom_jitter( aes(color=strain, shape=colony),size=3, height=0, width=0.2, fill="white")+
+  ggplot(aes(x=strain, y=`lag time (minutes)`))+
+  geom_boxplot()+
+  geom_jitter( aes(color=colony, shape=colony),size=3, height=0, width=0.3, fill="white")+
   theme_cowplot()+panel_border()+
   # coord_flip()+
   scale_shape_manual(values = c(21,22,24))+
-  facet_grid(media~strain, scales = "free_y")+
-  theme(axis.text.x = element_text(angle=90, vjust = 0.5))
+  facet_wrap(~media, )+
+    theme(axis.text.x = element_text(angle=90, vjust = 0.5))+
+  ylim(0,NA)
 ```
 
 ```{r, echo=FALSE}
@@ -220,13 +267,16 @@ gr %>%
   filter(strain!="blank")%>%
   filter(!(well%in%outlier.wells))%>%
   mutate(`Max OD`=as.numeric(`Max OD`))%>%
-  ggplot(aes(x=colony, y=`Max OD`))+
-  geom_jitter( aes(color=strain, shape=colony),size=3, height=0, width=0.3, fill="white")+
-  theme_cowplot()+panel_border()+
-  # coord_flip()+
+  ggplot(aes(x=strain, y=`Max OD`))+
+  geom_boxplot()+
+  geom_jitter( aes(color=colony, shape=colony),size=3, 
+               height=0, width=0.3, fill="white")+
+  theme_cowplot()+
+  panel_border()+
   scale_shape_manual(values = c(21,22,24))+
-  facet_grid(media~strain, scales = "free_y")+
-    theme(axis.text.x = element_text(angle=90, vjust = 0.5))
+  facet_wrap(~media )+
+    theme(axis.text.x = element_text(angle=90, vjust = 0.5))+
+  ylim(0,NA)
 
 ```
 
@@ -296,86 +346,13 @@ gr%>%
 t.test(as.numeric(tmp$`Max OD`)~ tmp$strain)
 ```
 
-
-```{r}
-gr%>%
-  filter(strain!="blank")%>%
-    filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=strain, y=Rate))+
-  geom_boxplot()+
-  geom_jitter(aes(color=colony),shape=21, fill="white", size=2, width = 0.2)+
-  theme_cowplot()+
-  facet_wrap(~media, scales = "free_y")
-```
-
-
-```{r}
-gr%>%
-  filter(strain!="blank")%>%
-    filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=strain, y=as.numeric(`Max OD`)))+
-  geom_boxplot()+
-  geom_jitter(aes(color=colony),shape=21, fill="white", size=2, width = 0.2)+
-  theme_cowplot()+
-  facet_wrap(~media, scales = "free_y")+
-  ylab("Max OD")
-```
-
-```{r}
-gr%>%
-  filter(strain!="blank")%>%
-    filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=strain, y=`lag time (minutes)`))+
-  geom_boxplot()+
-  geom_jitter(aes(color=colony),shape=21, fill="white", size=2, width = 0.2)+
-  theme_cowplot()+
-  facet_wrap(~media, scales = "free_y")
-```
-
 # **Take aways** 
 
 ## DSM
-The plan for the co-evolution experiment is to use DSM. Significant strain dependent differences are seen for the **Max OD**. WT has a higher average Max OD, but the difference seems quite small. I should sat that seeing a difference in this parameter is not surprising, as that is the point where the two strains are expected to behave differently: WT sporulates, while $\Delta$spoIIE cannot.
+The plan for the co-evolution experiment is to use DSM. Significant strain dependent differences are seen for the **Max OD**. WT has a higher average Max OD, but the difference seems quite small. I should say that seeing a difference in this parameter is not surprising, as that is the point where the two strains are expected to behave differently: WT sporulates, while $\Delta$spoIIE cannot.
 
 ## LB  
 Significant strain dependent differences are seen for the lag time, with WT having a longer lag period by nearly 5 minutes, on average. That seems like quite a lot. 
 
-## What is next?  
 
-I was thinking I would do a direct competition over several seial transfers. However that seems like a bad idea beacuse spores aould obviously have a longer lag time. So I should probably start them of from cultutres with-out sporulation, maybe repress with glucose.
-
-```{r}
-p.rate <- 
-gr%>%
-  filter(strain!="blank")%>%
-    filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=strain, y=Rate))+
-  geom_boxplot()+
-  geom_jitter(aes(color=colony),shape=21, fill="white", size=2, width = 0.2)+
-  theme_cowplot()+
-  facet_wrap(~media, scales = "free_y")
-
-p.od <- 
-gr%>%
-  filter(strain!="blank")%>%
-    filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=strain, y=as.numeric(`Max OD`)))+
-  geom_boxplot()+
-  geom_jitter(aes(color=colony),shape=21, fill="white", size=2, width = 0.2)+
-  theme_cowplot()+
-  facet_wrap(~media, scales = "free_y")+
-  ylab("Max OD")
-
-p.lag <- 
-gr%>%
-  filter(strain!="blank")%>%
-    filter(!(well%in%outlier.wells))%>%
-  ggplot(aes(x=strain, y=`lag time (minutes)`))+
-  geom_boxplot()+
-  geom_jitter(aes(color=colony),shape=21, fill="white", size=2, width = 0.2)+
-  theme_cowplot()+
-  facet_wrap(~media, scales = "free_y")
-
-plot_grid(p.rate,p.od,p.lag, ncol = 1)
-```
 
