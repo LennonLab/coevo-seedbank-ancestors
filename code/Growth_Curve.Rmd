@@ -1,9 +1,9 @@
 ---
 title: "Growth curves"
 output: html_notebook
-editor_options: 
-    code_folding: hide
-    chunk_output_type: inline
+editor_options:
+  code_folding: hide
+  chunk_output_type: inline
 ---
 Growth curves for $\Delta$6$-\Delta$SpoIIE and $\Delta$6-WT
 ```{r, message=FALSE}
@@ -104,7 +104,7 @@ outlier.wells <-
   deframe()
 
 d <- d%>%
-  filter(!(well%in%outlier.wells))%>%
+  filter(!(well%in%outlier.wells))
   
 ```
 
@@ -128,10 +128,7 @@ d%>%
 
 ```{r, message=FALSE}
 d%>%
-  as.tbl()%>%
   filter(strain!="blank")%>%
-  filter(!(well%in%outlier.wells))%>%
-  # mutate(strain = fct_relevel(strain, "pDR110","sigF", "sigG","SP10","Goe3")) %>%
   ggplot(aes(x=Time, y=OD600))+
       geom_line(aes(group=well,color=colony))+
       theme_cowplot()+
@@ -143,10 +140,7 @@ d%>%
 The replicate colonies are on top of each other.How about the different strains?  
 ```{r}
 d%>%
-  as.tbl()%>%
   filter(strain!="blank")%>%
-  filter(!(well%in%outlier.wells))%>%
-  # mutate(strain = fct_relevel(strain, "pDR110","sigF", "sigG","SP10","Goe3")) %>%
   ggplot(aes(x=Time, y=OD600))+
       geom_line(aes(group=well,color=strain, linetype=colony))+
       theme_cowplot()+
@@ -159,10 +153,8 @@ For the growth phase they look exactly the same.
 ## Focus on time of growth
 
 ```{r, message=FALSE}
-d%>%
-  as.tbl()%>%
+d%>% 
   filter(strain!="blank")%>%
-  filter(!(well%in%outlier.wells))%>%
   filter(Time<9.5)%>%
   group_by(well)%>%
     ggplot(aes(x=Time, y=OD600))+
