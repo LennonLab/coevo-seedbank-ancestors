@@ -346,5 +346,43 @@ The plan for the co-evolution experiment is to use DSM. Significant strain depen
 ## LB  
 Significant strain dependent differences are seen for the lag time, with WT having a longer lag period by nearly 5 minutes, on average. That seems like quite a lot. 
 
+# presentable plot
+
+```{r}
+d.plot <- gr%>%
+  filter(strain != "blank") %>%
+  filter(media == "DSM") %>%
+# long format for panels
+  mutate(Max.OD=as.numeric(`Max OD`))%>%
+  select(-R, -`Max OD`)%>%  
+  pivot_longer(cols = 8:10, 
+               values_to = "val", names_to = "param")%>%
+  filter(!is.na(val))
+#summary stats  
+d.plot.sum <- 
+  d.plot%>%
+  group_by(strain, param) %>%
+  summarise(n = n(),
+            m = mean(val),
+            sem = sd(val)/sqrt(n))
+
+#plot
+d.plot%>%
+  ggplot(aes(x=strain, y=val))+
+  geom_errorbar(data = d.plot.sum, aes(y=m, ymin = m-sem, ymax = m+sem),
+                size=1, width=0.3)+
+  geom_jitter( shape=21,size=2, fill="grey", alpha=0.5,
+               height=0, width=0.3)+
+  theme_cowplot()+
+  panel_border(color = "black", size = 1.5)+
+  scale_shape_manual(values = c(21,22,24))+
+  facet_wrap(~param, scales = "free" )+
+    theme(strip.background = element_blank(),
+          strip.text = element_text(face = "bold"),
+          axis.title.y = element_blank())+
+  ylim(0,NA)+
+  ggsave(here("plots","DSM_grwoth-params.png"), width = 7, height = 4)
+
+```
 
 
