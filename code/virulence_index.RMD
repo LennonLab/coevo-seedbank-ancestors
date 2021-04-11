@@ -1,0 +1,436 @@
+---
+title: "Virulence index "
+output: html_notebook
+editor_options:
+  code_folding: hide
+  chunk_output_type: inline
+---
+
+```{r, message=FALSE}
+library(here)
+library(tidyverse)
+library(lubridate)
+library(broom)
+library(cowplot)
+```
+
+# The virulence index  
+Based on paper *Storms, Zachary J., et al. "The Virulence Index: A Metric for Quantitative Analysis of Phage Virulence." PHAGE 2019*
+
+In preparation for the coevolution experiments we compare SPO1 fitness (with virulence index as a proxy) when infecting  *B. subtilis* $\Delta$6-WT (spo^+^) versus *B. subtilis* $\Delta$6$-\Delta$spoIIE (spo^-^) hosts .
+
+## load data  
+```{r, message=FALSE}
+# read this file
+xpt.file <- here("data", "virulence-index", "Bacterial_reduction_16hrs_200404.txt")
+
+# number of times plate was read
+xpt.reads = grep("Reads", readLines(xpt.file), value = T)%>%
+  str_remove(pattern = ".*,") %>% parse_number()
+
+# start line of OD table
+start.line = grep("^Time.*A1", readLines(xpt.file))
+
+# end line of OD table
+aprox.end.line.n= floor(start.line+xpt.reads)-start.line
+
+# read data and organize it
+input <- 
+  read_tsv(xpt.file,
+       skip = start.line-1,
+       n_max = aprox.end.line.n-1,
+       col_types = cols(Time = "c"))%>%
+  # rename temp column
+    rename("temp"=2)%>%
+  # Convert time to hms
+    mutate(Time=lubridate::hms(Time))%>%
+    mutate(Time=as.duration(Time))%>%
+  # remove empty lines
+    filter(Time != 0)
+
+```
+
+In these files there are reads every 2 min. I will average on window of 8 reads.
+```{r, message=FALSE}
+# window size
+win <- 8
+
+#number of points after averaging
+n.group <-floor( nrow(input)/win)
+
+# remove last rows so it divides by win
+input <- input[1:(win*n.group),]
+
+input.avg <- 
+  input%>%
+  #add grouping variable 
+    mutate(g=ntile(1:(win*n.group),n.group))%>%
+    group_by(g)%>%
+    summarise(across(where(is.numeric), ~ mean(.x, na.rm = TRUE)))%>%
+  #remove grouping var
+    select(-g) %>%
+  # convert time to hours
+    mutate(Time = Time/3600)
+
+#transform to long format
+d <- gather(input.avg, key="well", value = "OD600", colnames(input)[-c(1:2)])
+
+#add metadata
+meta <- read_csv(here("data", "virulence-index","layout.csv"))
+
+d <-merge(d, meta)
+```
+
+Examine data a curves
+
+```{r}
+d%>%
+  filter(dilution != "Blank")%>%
+  filter(Time<10)%>%
+  ggplot(aes(x=Time, y=OD600))+
+  geom_line(aes(group=well,color=dilution), size=1)+
+  facet_grid(host~phage)+
+  theme_cowplot()+
+  panel_border()+
+  scale_color_viridis_d()+
+    theme(legend.position = "bottom")
+```
+Overall, there is a good dilution dependence in the timing of bacterial growth reduction (i.e. lysis). There appear to be a few phage contaminated controls, and perhaps a single well that sis not receive phage in the highest dilution on host $\Delta$spoIIE. Which wells are these?
+
+```{r}
+d%>%
+  group_by(well)%>%
+  ggplot(aes(x=Time, y=OD600))+
+    geom_line(aes(color=dilution))+
+    facet_grid(row~col)+
+  theme_cowplot()+
+  panel_border()+
+  scale_color_viridis_d()
+
+
+```
+* Phage contaminated control wells: A7, E7 and C12  
+* Well H8 may have not received phage.
+we will remove those wells:  
+```{r}
+contam.wells <- c("A7", "E7" , "C12", "H8")
+
+d <- 
+  d%>%
+  filter(!well %in%contam.wells)
+
+meta <-
+  meta%>%
+  filter(!well %in%contam.wells)
+```
+
+
+
+
+## Calculating the virulence index 
+Folowing Storms et. al.  
+
+>1. establish limit of integration:  
+It is important to stress how the establishment of the limit of integration plays a significant role in the assessment of virulence. This limit should be set as the onset of stationary phase in the phage-free control. This provides a consistent reference for integration that can be easily identified for any phage–host system and restricts measurements to the period of cell growth — a necessary condition for productive infection for many phages.
+Moreover, it ensures that the range of the virulence measurements is well distributed, as discussed hereunder. In general, we recommend establishing the limit of integration as the time at which the slope of OD630 over time reaches ≤0.03 h.
+
+### Determining the integration limit
+Doing this can be done in 2 ways:  
+A.using 'growthcurver' to find no-phage carrying capacity (k)
+```{r}
+library(growthcurver)
+
+k.noPHI <- 
+  input %>%
+  # make time in hours
+  mutate (Time = as.numeric(Time)/3600)%>%
+  #focus on time before OD decline
+  filter(Time < 7) %>%
+  # select non-infected data  
+  select(c("Time", meta$well[meta$phage=="noPHI"]))%>%
+  # derive growth parameters with "growthcurver"   
+  SummarizeGrowthByPlate(., bg_correct = "none")%>%
+  select(well = sample, k)
+
+# for each of the non-infected wells we now find the time it reached carrying capacity
+
+# add column to store time
+k.noPHI$Time.k <- NA
+
+for(i in seq(k.noPHI$well)){
+  w <- k.noPHI$well[i]
+  k <- k.noPHI$k[i]
+  tmp <- 
+    d%>%
+    filter(well==w)
+  k.noPHI$Time.k[i] <-
+    tmp$Time[which(tmp$OD600>k)[1]]
+    
+}
+#remove loop vars
+rm(tmp, i,w,k)
+# use the median time found
+int.limit <- median(k.noPHI$Time.k, na.rm = TRUE)
+int.limit
+```
+
+B. by visual inspection of plots  
+First I will look at the change in OD over time. Storms et al. recommend 
+>establishing the limit of integration as the time at which the slope of OD630 over time reaches ≤0.03 h
+
+```{r}
+time.diff <- diff(d$Time[1:2])
+    
+d %>% 
+  filter(phage=="noPHI")%>%
+  split(.$well)%>% 
+  map_df("OD600")%>%
+  map_df(diff)%>%
+    map_df(function(x) x/time.diff)-> tmp
+
+matplot(x= unique(d$Time)[-60],tmp, type="l", ylab = "OD/Time diff")
+abline(h=0.03, col="pink", lwd=3)
+abline(v=c(1:floor(max(d$Time))), col="grey")
+abline(v = int.limit, col="pink", lwd=3)
+
+```
+The integration limit found by first methods matches also the second method. So we use `r {signif(int.limit,2)}` hrs as the integration limit. 
+How does that look?   
+```{r}
+d%>%
+  filter(phage=="noPHI")%>%
+  filter(Time<int.limit)%>%
+  ggplot(aes(x=Time, y=OD600, group = well))+
+  geom_line(data=filter(d,phage=="noPHI"), color="grey", size=1)+
+  geom_line(aes(color=as.factor(dilution)), size=1)+
+  theme_cowplot()+
+    theme(legend.position = "none")
+
+```
+Looks right!  
+
+## Choosing the dilution range  
+Need to make sure to use only dilutions in which all wells got phage.  
+```{r}
+phage.vol <- 0.1 #ml
+# the following titer was measured by plaque assay
+init.titer <- 1.5e11 #PFU/ml
+max.dilut <- 1/(init.titer*phage.vol)
+
+# verify visually
+d%>%
+  filter(host != "Blank")%>%
+  filter(dilution != "Blank")%>%
+  # filter(Time<int.limit)%>%
+  filter(phage!="noPHI")%>%
+  # filter(dilution<=max.dilut)%>%
+  ggplot(aes(x=Time, y=OD600))+
+  geom_line(aes(color=well), size=1)+
+  facet_grid(dilution~host+phage)+
+  theme_cowplot()+
+    theme(legend.position = "none")
+
+```
+
+All the dilutions can be used. 
+
+Plot of lysis within the time of integration  
+```{r}
+d%>%
+  filter(host != "Blank")%>%
+  filter(dilution != "Blank")%>%
+  filter(Time<int.limit)%>%
+  filter(!grepl("COL",dilution))%>%
+  # filter(phage!="noPHI")%>%
+  # filter(dilution<=max.dilut)%>%
+  ggplot(aes(x=Time, y=OD600))+
+  geom_line(aes(group=well,color=dilution), size=1)+
+  facet_wrap(~fct_rev(host))+
+  theme_cowplot()+
+  scale_color_viridis_d()
+```
+
+## Integrate the area under curve  
+Storms et al.: 
+
+>areas underneath the optical density versus time curves were calculated using the trapezoid rule for each well, from the time of infection to the  time corresponding to the onset of stationary phase in the phage-free control
+
+```{r}
+library(caTools) #needed for trapezoids
+# add column for area under the curve
+meta$auc <- NA
+
+for(i in seq(meta$well)){
+  if(meta$host[i]=="Blank") next
+  # get data for a single well within integration limit
+  tmp <- 
+    d%>%
+    filter(well==meta$well[i])%>%
+    filter(Time<=int.limit)
+  # calc. area under the curve
+  meta$auc[i] <- trapz(tmp$Time, tmp$OD600)
+    
+}
+rm(tmp)
+
+# summarize no phage control areas for each colony
+sum.noPHI <- 
+  meta%>%
+    filter(host != "Blank")%>%
+    filter(phage=="noPHI")%>%
+    group_by(host, colony)%>%
+    summarise( A0=mean(auc), sd=sd(auc), n=n())
+
+
+```
+Because of phage contamination I dont have non-infected wells of COL1 of the spoIIE host.
+perhaps I can use the other colonies to estimate this:
+
+```{r}
+sum.noPHI%>%
+  ggplot(aes (x = colony, y = A0))+
+  geom_pointrange(aes(ymin = A0-sd, ymax = A0+sd))+
+  facet_wrap(~host)+
+  theme_cowplot()+
+  labs(caption = ("mean±sd (n=3)"))
+
+summary(aov(A0 ~ host + colony, data = sum.noPHI))
+```
+
+There is no significant difference between colonies within host. I will assign COL1 the mean of the 3 other colonies
+
+```{r}
+A0.col1 <- 
+  sum.noPHI%>%
+  filter(host=="spoIIE")%>%
+  pull(A0)%>%
+  mean()
+
+sum.noPHI <- 
+  tibble(host = "spoIIE", colony = "COL1", A0 = A0.col1,
+         sd = NA, n = NA)%>%
+  bind_rows(.,sum.noPHI)
+```
+
+Now, we continue with the analysis  
+```{r}
+# add the non-infected auc of the right host colony to each well
+vindex <- merge(meta, sum.noPHI)
+# calc. local virulence
+vindex$Vi <- 1-(vindex$auc/vindex$A0)
+# calculate MOI assuming 2.5e7 CFU/ml
+vindex$log.moi <- log10(as.numeric(vindex$dilution)*init.titer/2.5e7)
+
+vindex%>%
+  filter(phage!="noPHI")%>%
+  group_by(host,colony, phage, log.moi)%>%
+  summarise( Virulence=mean(Vi), mn=min(Vi), mx=max(Vi), n=n())%>%
+  ggplot(aes(log.moi, Virulence))+
+  geom_line(aes(color=host, group = interaction(colony,host)), size=1)+
+  geom_pointrange(aes(ymin=mn, ymax=mx, color=host ), shape=21, fill="white")+
+  # facet_wrap(~host)
+  theme_cowplot()
+```
+
+## summarize to single value index
+Storms et al.:  
+>The virulence index is defined as the area under the virulence curve (AP) divided by the theoretical maximum area under the virulence curve (Amax)
+
+**Vp = Ap / Amax**  
+```{r}
+sum.phi <- vindex%>%
+  filter(phage!="noPHI")%>%
+  group_by(host,colony, phage)%>%
+  summarise(  n=n())
+
+sum.phi$Ap <- NA
+sum.phi$Amax <- NA
+for(i in seq(nrow(sum.phi))){
+ 
+  tmp <- 
+    vindex%>%
+    filter(phage!="noPHI")%>%
+    filter(host==sum.phi$host[i])%>%
+    filter(colony==sum.phi$colony[i])%>%
+    filter(phage==sum.phi$phage[i])%>%
+    # filter(dilution>=max.dilut)%>%
+    arrange(log.moi)
+  sum.phi$Ap[i] <- trapz(tmp$log.moi, tmp$Vi)
+  sum.phi$Amax[i] <-  trapz(tmp$log.moi,rep(1, nrow(tmp)))
+  
+}
+
+rm(tmp)
+sum.phi$Vp <- sum.phi$Ap/sum.phi$Amax
+
+sum.phi%>%
+  # filter(n==8)%>%
+  ggplot(aes(x=interaction(phage,host, sep = "x"), y=Vp))+
+  geom_boxplot(width=0.2)+
+    geom_jitter(shape=21,#aes(shape=as.factor(colony)),
+              height=0, width=0.05,size=5, fill="grey", alpha=0.5)+
+  # scale_shape_manual(values=c(15,16,22,21))+
+  ylim(0,1)+
+  theme_cowplot()
+```
+
+## Stats  
+```{r}
+summary(aov(Vp~host+colony, sum.phi  ))
+```
+
+# No Difference!!  
+
+```{r}
+t.test(Vp~host, sum.phi )
+```
+
+
+# presentable plot
+
+```{r}
+# d.plot <- gr%>%
+#   filter(strain != "blank") %>%
+#   filter(media == "DSM") %>%
+# # long format for panels
+#   mutate('Max OD' =as.numeric(`Max OD`))%>%
+#   select(-R, `Rate (per minute)` = Rate,
+#          `Lag Time (minutes)` = `lag time (minutes)`)%>%  
+#   pivot_longer(cols = 8:10, 
+#                values_to = "val", names_to = "param")%>%
+#   filter(!is.na(val))%>%
+#   mutate(param = fct_relevel(param,  c("Lag Time (minutes)","Rate (per minute)","Max OD")))
+
+#summary stats  
+d.plot.sum <- 
+  sum.phi%>%
+  group_by(host) %>%
+  summarise(n = n(),
+            m = mean(Vp),
+            sem = sd(Vp)/sqrt(n))
+
+#plot
+sum.phi%>%
+  ggplot(aes(x = fct_rev(host), y = Vp))+
+  geom_jitter(shape = 21, size = 1.5, fill = "grey",
+              alpha = 0.5, height = 0, width = 0.1)+
+  geom_errorbar(data = d.plot.sum, 
+                aes(y = m, ymin = m-sem, ymax = m+sem),
+                size = .5, width = 0.2)+
+  geom_point(data = d.plot.sum, aes(y=m),
+                size = 2, shape = 21, fill = "black")+
+  theme_cowplot()+
+  panel_border(color = "black", size = 1.5)+
+  scale_shape_manual(values = c(21,22,24))+
+  theme(strip.background = element_blank(),
+          strip.text = element_text(face = "bold"))+
+  ylim(0,NA)+
+  xlab("Strain")+
+  ylab("Phage Virulence (Vp)")+
+  ggsave(here("plots","Vir-index.png"), width = 4, height = 3)
+
+```
+
+
+
+
