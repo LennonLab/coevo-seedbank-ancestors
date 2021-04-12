@@ -337,6 +337,14 @@ gr%>%
     filter(media=="DSM")-> tmp
 t.test(as.numeric(tmp$`Max OD`)~ tmp$strain)
 ```
+```{r}
+t.test(as.numeric(tmp$Rate)~ tmp$strain)
+```
+
+```{r}
+t.test(as.numeric(tmp$`lag time (minutes)`)~ tmp$strain)
+```
+
 
 # **Take aways** 
 
