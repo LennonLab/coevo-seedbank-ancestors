@@ -12,6 +12,7 @@ library(tidyverse)
 library(lubridate)
 library(broom)
 library(cowplot)
+library(scales)
 ```
 
 # The virulence index  
@@ -388,29 +389,23 @@ t.test(Vp~host, sum.phi )
 
 # presentable plot
 
+Plot of virulence index
+
 ```{r}
-# d.plot <- gr%>%
-#   filter(strain != "blank") %>%
-#   filter(media == "DSM") %>%
-# # long format for panels
-#   mutate('Max OD' =as.numeric(`Max OD`))%>%
-#   select(-R, `Rate (per minute)` = Rate,
-#          `Lag Time (minutes)` = `lag time (minutes)`)%>%  
-#   pivot_longer(cols = 8:10, 
-#                values_to = "val", names_to = "param")%>%
-#   filter(!is.na(val))%>%
-#   mutate(param = fct_relevel(param,  c("Lag Time (minutes)","Rate (per minute)","Max OD")))
 
 #summary stats  
 d.plot.sum <- 
   sum.phi%>%
+  mutate(host = str_replace(host, "spoIIE", "dSpoIIE")) %>%
   group_by(host) %>%
   summarise(n = n(),
             m = mean(Vp),
             sem = sd(Vp)/sqrt(n))
 
 #plot
+p1 <- 
 sum.phi%>%
+  mutate(host = str_replace(host, "spoIIE", "dSpoIIE")) %>%
   ggplot(aes(x = fct_rev(host), y = Vp))+
   geom_jitter(shape = 21, size = 1.5, fill = "grey",
               alpha = 0.5, height = 0, width = 0.1)+
@@ -426,11 +421,50 @@ sum.phi%>%
           strip.text = element_text(face = "bold"))+
   ylim(0,NA)+
   xlab("Strain")+
-  ylab("Phage Virulence (Vp)")+
-  ggsave(here("plots","Vir-index.png"), width = 4, height = 3)
+  ylab("Phage Virulence (Vp)")
+  # ggsave(here("plots","Vir-index.png"), width = 4, height = 3)
 
 ```
 
 
+Plot comparing lysis curves 
+```{r}
+p2 <- 
+d%>%
+  filter(dilution != "Blank")%>%
+  filter(Time<=8)%>%
+  mutate(dilution = str_replace(dilution, "noPHI", "no phage")) %>% 
+  mutate(host = str_replace(host, "spoIIE", "dSpoIIE")) %>% 
+# average replicates
+  group_by(Time, host, dilution) %>%
+  summarise(n = n(), m = mean(OD600), v = sd(OD600)/sqrt(n)) %>% 
+#plot
+  ggplot(aes(x=Time, y=m))+
+  geom_vline(xintercept = int.limit, linetype = 3, alpha = 0.35)+
+  geom_linerange(aes(ymin = m-v, ymax = m+v, color=host),
+                 size=.5, show.legend = F)+
+  geom_line(aes(color=host), size=.5)+
+  facet_wrap(~dilution, dir = "v")+
+  theme_cowplot()+
+  panel_border(color = "black", size = 1.5)+
+    theme(legend.position = c(.01, .95),
+          legend.title = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_text(face = "bold"),
+          axis.title.y = element_blank())+
+  scale_color_grey(guide = guide_legend(reverse = TRUE))+
+  ylab("OD600")+
+  xlab("Time (hrs)")
+  # ggsave(here("plots","lysis.png"), width = 4, height = 5)
+```
 
+Put the plots together  
+```{r}
+
+plot_grid(p2,NULL, p1, 
+          rel_widths = c(2,0.1,1),
+          labels = c("(a)","", "(b)"),
+          nrow = 1)+
+  ggsave(here("plots","virulence.png"), width = 8, height = 5)
+```
 
