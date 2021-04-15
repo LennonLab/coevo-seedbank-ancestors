@@ -66,7 +66,7 @@ d%>%
                               y = cfu.ml.x, yend = cfu.ml.y),color="grey70")+
   geom_text(data = lab.exp, aes(label = lab), color="grey70")+
   geom_point(aes(shape=trt, fill= trt), size = 3)+
-  theme_minimal_hgrid(12)+
+  theme_cowplot()+
   panel_border(color = "black", size = 1.5)+
   scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
               labels = trans_format("log10", math_format(10^.x))) +
@@ -77,7 +77,7 @@ d%>%
   scale_color_manual(values = c("black","black"))+
   scale_fill_manual(values = c("black","white"), 
                     labels = c("long seed bank", "short seed bank"))+
-  theme_cowplot()+
+
       theme(legend.position = c(.6, .81),
             legend.title = element_blank(),
             strip.background = element_blank(),
