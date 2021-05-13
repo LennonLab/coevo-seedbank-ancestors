@@ -1,0 +1,72 @@
+---
+title: "Virulence input lyaste"
+output: html_notebook
+editor_options:
+  code_folding: hide
+  chunk_output_type: inline
+---
+
+```{r, message=FALSE}
+library(here)
+library(tidyverse)
+library(cowplot)
+```
+
+The input lysate used in the virulence index was titered by plaque assay.
+
+## load data  
+```{r, message=FALSE}
+# read file
+d <- read_csv(here("data/virulence-index/Plating_virulence index.csv")) %>% 
+  # calculate titers
+  mutate(pfu.ml = plaque / (dilution * ml.plated))
+```
+
+
+Summarize and plot
+
+```{r, message=FALSE}
+d.sum <- d %>% 
+  group_by(host) %>% 
+  summarise(m = mean(pfu.ml), sem = sd(pfu.ml)/sqrt(n()))
+# plot
+d %>% 
+  ggplot(aes(host, pfu.ml))+
+  geom_errorbar(data = d.sum, 
+                aes(y = m, ymin = m-sem, ymax = m+sem),
+                size = .5, width = 0.2)+
+  geom_point(data = d.sum, aes(y=m),
+                size = 2, shape = 21, fill = "black")+
+  geom_point(shape=21, size = 3,
+             position = position_jitter(width = 0.05))+
+  theme_cowplot()+
+  ylim(0,NA)+
+  ylab ("PFU/ml")+
+    panel_border(color = "black", size = 1.5)+
+    theme(legend.position = c(.01, .95),
+          legend.title = element_blank(),
+          strip.background = element_blank(),
+          strip.text = element_text(face = "bold"))+
+  labs(caption = ("mean±sem (n=3)"))
+
+```
+
+## Stats
+
+```{r}
+t.test(pfu.ml ~ host, data = d)
+```
+
+No difference
+
+## Input 
+
+```{r}
+avg.titer <- mean(d$pfu.ml)
+ 
+titer.pwr <- floor(log10(avg.titer))
+titer.base <- round(avg.titer/10^titer.pwr,3)
+
+```
+
+**Input titer is $`r titer.base` x10^{`r titer.pwr`} PFU/ml$** 
