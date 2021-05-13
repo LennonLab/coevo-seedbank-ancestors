@@ -1,0 +1,89 @@
+---
+title: "Seed Bank Test"
+output: html_notebook
+editor_options:
+  code_folding: hide
+  chunk_output_type: inline
+---
+
+```{r, message=FALSE}
+library(here)
+library(tidyverse)
+library(cowplot)
+library(scales)
+library(ggrepel)
+```
+
+Read data
+```{r}
+d <- read_csv(here("data", "seed-bank", "seed_bank_test.csv"))
+```
+Naive expectation
+```{r}
+dilute <- function (initial, len, dilution){
+  x <- c(initial, rep(NA, len-1))
+
+  for(i in 2:len){
+    x[i] <- x[i-1]*dilution
+    
+  }
+    return(x)
+}
+
+
+
+d.exp <- tibble(day = 0:12,
+                long = dilute(initial = d$long[1], len = 13, dilution = 0.2),
+                short = dilute(initial = d$short[1], len = 13, dilution = 0.01))%>%
+   pivot_longer(-day, names_to = "trt", values_to = "cfu.ml")
+
+
+lab.exp <- 
+  d.exp %>% 
+  filter(day == 3 | day==4 ) %>%
+  group_by(trt)%>%
+  summarise(cfu.ml = mean(cfu.ml), day = mean (day)) %>% 
+  mutate(day = day +.5) %>%
+  mutate(lab = if_else(trt == "long", "1:5", "1:100"))
+
+```
+Deviation from expectation
+```{r}
+dj <- d%>%
+  pivot_longer(-day, names_to = "trt", values_to = "cfu.ml") %>% 
+  left_join(.,d.exp, by = c("day","trt"))
+```
+
+
+
+```{r}
+#plot
+d%>%
+  pivot_longer(-day, names_to = "trt", values_to = "cfu.ml") %>% 
+  ggplot(aes(x = day, y = cfu.ml))+
+  geom_line(data = d.exp, aes(group = trt), linetype = 2, size = 1, show.legend = F, color="grey70")+
+  geom_segment(data = dj, aes(x = day, xend = day,
+                              y = cfu.ml.x, yend = cfu.ml.y),color="grey70")+
+  geom_text(data = lab.exp, aes(label = lab), color="grey70")+
+  geom_point(aes(shape=trt, fill= trt), size = 3)+
+  theme_cowplot()+
+  panel_border(color = "black", size = 1.5)+
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+              labels = trans_format("log10", math_format(10^.x))) +
+  coord_cartesian(ylim = c(10,NA))+
+  scale_x_continuous(breaks = seq(0, 12, 1))+
+  scale_shape_manual(values = c(22,21),
+                     labels = c("long seed bank", "short seed bank"))+
+  scale_color_manual(values = c("black","black"))+
+  scale_fill_manual(values = c("black","white"), 
+                    labels = c("long seed bank", "short seed bank"))+
+
+      theme(legend.position = c(.6, .81),
+            legend.title = element_blank(),
+            strip.background = element_blank(),
+            strip.text = element_text(face = "bold"))+
+  ylab("Cm-resistant CFU (per mL)")+
+  xlab("Time (day)")+
+  ggsave(here("plots","seed-bank-test.png"), width = 5, height = 4)
+```
+
