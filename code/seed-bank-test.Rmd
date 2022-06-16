@@ -19,7 +19,7 @@ Read data
 d <- read_csv(here("data", "seed-bank", "seed_bank_test.csv"))
 
 d <- d %>% 
-  rename(maipulated = long) %>% 
+  rename(manipulated = long) %>% 
   rename(simple = short)
 ```
 Naive expectation
@@ -37,7 +37,7 @@ dilute <- function (initial, len, dilution){
 
 
 d.exp <- tibble(day = 0:12,
-                maipulated = dilute(initial = d$maipulated[1],
+                manipulated = dilute(initial = d$manipulated[1],
                                     len = 13, dilution = 0.2),
                 simple = dilute(initial = d$simple[1],
                                 len = 13, dilution = 0.01))%>%
@@ -50,7 +50,7 @@ lab.exp <-
   group_by(trt)%>%
   summarise(cfu.ml = mean(cfu.ml), day = mean (day)) %>% 
   mutate(day = day +.5) %>%
-  mutate(lab = if_else(trt == "maipulated", "1:5", "1:100"))
+  mutate(lab = if_else(trt == "manipulated", "1:5", "1:100"))
 
 ```
 Deviation from expectation
@@ -66,6 +66,8 @@ dj <- d%>%
 #plot
 d%>%
   pivot_longer(-day, names_to = "trt", values_to = "cfu.ml") %>% 
+    #adjust treatment name
+  mutate(trt = if_else(trt == "manipulated", "with external seed bank", "no external seed bank") %>% fct_rev()) %>% 
   ggplot(aes(x = day, y = cfu.ml))+
   geom_line(data = d.exp, aes(group = trt), linetype = 2, size = 1, show.legend = F, color="grey70")+
   geom_segment(data = dj, aes(x = day, xend = day,
@@ -86,12 +88,13 @@ d%>%
                     # labels = c("long seed bank", "short seed bank")
                     )+
 
-      theme(legend.position = c(.6, .81),
+      theme(legend.position = c(.7, .85),
             legend.title = element_blank(),
             strip.background = element_blank(),
             strip.text = element_text(face = "bold"))+
   ylab("Cm-resistant CFU (per mL)")+
-  xlab("Time (day)")
+  xlab("Time (day)")+
+  annotation_logticks(sides = "l")
   
 ggsave(here("plots","seed-bank-test.png"), width = 5, height = 4)
 ```
