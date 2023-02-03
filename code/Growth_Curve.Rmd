@@ -1,6 +1,8 @@
 ---
 title: "Growth curves"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 editor_options:
   code_folding: hide
   chunk_output_type: inline
@@ -387,6 +389,7 @@ d.plot%>%
                 size = .5, width = 0.2)+
   geom_point(data = d.plot.sum, aes(y=m),
                 size = 2, shape = 21, fill = "black")+
+  scale_x_discrete(labels=c("WT" = "wild-type","dSpoIIE" = expression(Delta*italic(spoIIE))))+
   theme_cowplot()+
   panel_border(color = "black", size = 1.5)+
   scale_shape_manual(values = c(21,22,24))+
@@ -395,9 +398,12 @@ d.plot%>%
           strip.text = element_text(face = "bold"),
           axis.title.y = element_blank())+
   ylim(0,NA)+
-  xlab("Strain")+
-  ggsave(here("plots","DSM_growth-params.png"), width = 7, height = 3)
+  xlab("Strain") -> p
+  
+ggsave(here("plots","DSM_growth-params.png"), p, 
+       width = 7, height = 3, bg = "white")
 
+p
 ```
 
 

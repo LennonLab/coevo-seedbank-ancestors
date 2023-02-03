@@ -1,6 +1,8 @@
 ---
-title: "Virulence index "
-output: html_notebook
+title: 'Virulence index '
+output:
+  html_document:
+    df_print: paged
 editor_options:
   code_folding: hide
   chunk_output_type: inline
@@ -416,11 +418,12 @@ sum.phi%>%
                 size = 2, shape = 21, fill = "black")+
   theme_cowplot()+
   panel_border(color = "black", size = 1.5)+
+  scale_x_discrete(labels=c("WT" = "wild-type","dSpoIIE" = expression(Delta*italic(spoIIE))))+
   scale_shape_manual(values = c(21,22,24))+
   theme(strip.background = element_blank(),
           strip.text = element_text(face = "bold"))+
   ylim(0,NA)+
-  xlab("Strain")+
+  xlab("host strain")+
   ylab("Phage Virulence (Vp)")
   # ggsave(here("plots","Vir-index.png"), width = 4, height = 3)
 
@@ -452,7 +455,8 @@ d%>%
           strip.background = element_blank(),
           strip.text = element_text(face = "bold"),
           axis.title.y = element_blank())+
-  scale_color_grey(guide = guide_legend(reverse = TRUE))+
+  scale_color_grey(guide = guide_legend(reverse = TRUE), #name = "host strain",
+                   labels=c("WT" = "wild-type","dSpoIIE" = expression(Delta*italic(spoIIE))))+
   ylab("OD600")+
   xlab("Time (hrs)")
   # ggsave(here("plots","lysis.png"), width = 4, height = 5)
@@ -464,7 +468,8 @@ Put the plots together
 plot_grid(p2,NULL, p1, 
           rel_widths = c(2,0.1,1),
           labels = c("(a)","", "(b)"),
-          nrow = 1)+
-  ggsave(here("plots","virulence.png"), width = 8, height = 5)
+          nrow = 1) -> p
+  ggsave(here("plots","virulence.png"),p, width = 8, height = 5, bg = "white")
+  p
 ```
 

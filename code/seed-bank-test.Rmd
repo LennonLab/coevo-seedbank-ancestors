@@ -1,6 +1,8 @@
 ---
 title: "Seed Bank Test"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 editor_options:
   code_folding: hide
   chunk_output_type: inline
@@ -67,9 +69,9 @@ dj <- d%>%
 d%>%
   pivot_longer(-day, names_to = "trt", values_to = "cfu.ml") %>% 
     #adjust treatment name
-  mutate(trt = if_else(trt == "manipulated", "with external seed bank", "no external seed bank") %>% fct_rev()) %>% 
+  mutate(trt = if_else(trt == "manipulated", "+external seed bank", "-external seed bank") %>% fct_rev()) %>% 
   ggplot(aes(x = day, y = cfu.ml))+
-  geom_line(data = d.exp, aes(group = trt), linetype = 2, size = 1, show.legend = F, color="grey70")+
+  geom_line(data = d.exp, aes(group = trt), linetype = 2, linewidth = 1, show.legend = F, color="grey70")+
   geom_segment(data = dj, aes(x = day, xend = day,
                               y = cfu.ml.x, yend = cfu.ml.y),color="grey70")+
   geom_text(data = lab.exp, aes(label = lab), color="grey70")+
