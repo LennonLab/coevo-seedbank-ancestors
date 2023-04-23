@@ -51,26 +51,48 @@ d.plot <- d.plot%>%
   # mutate(perc.ads = if_else(perc.ads>100, 100, perc.ads)) %>% 
   mutate(perc.ads = 1 - perc.ads)  
 
+# one-sample t-test
+t.result <- bind_rows(
+  d.plot %>% 
+    filter(cells == "Spores") %>% 
+    pull(perc.ads) %>%
+    t.test(., alternative = "g") %>% 
+    broom::tidy(),
+  
+  d.plot %>% 
+    filter(cells == "Vegetative") %>% 
+    pull(perc.ads) %>%
+    t.test(., alternative = "g") %>% 
+    broom::tidy()) %>% 
+  mutate(cells = c("Spores", "Vegetative"))
+
 p <- d.plot %>% 
   group_by(cells) %>% 
-  summarise(m = mean(perc.ads), v = sd(perc.ads)/sqrt(n())) %>% 
+  summarise(m = mean(perc.ads), v = sd(perc.ads)) %>% 
 
  ggplot(aes(cells))+
+  
+  # CI
+  geom_linerange(data = t.result,
+                 aes(y = estimate, ymin=conf.low, ymax=conf.high), 
+                 color = "grey90", linewidth = 10)+
+  
+  geom_hline(yintercept = 0, color = "black")+
 
-  geom_pointrange(aes(y = m, ymax = m+v, ymin = m-v), size=0.8,
-                  shape=21, fill = "white")+
+  geom_pointrange(aes(y = m, ymax = m+v, ymin = m-v), 
+                  stroke = 1,  size=1, shape = 21, fill = "white")+
   geom_jitter(data = d.plot, aes(y= perc.ads),
-              color = "grey60", width = 0.05, height = 0, size = 2)+
+              color = "grey40", width = 0.05, height = 0, size = 2)+
   scale_y_continuous(labels = scales::percent, 
                      breaks = c(0,.25,.50,.75,1),
                      limits = c(NA, 1))+
-  scale_x_discrete(limits = c( "Vegetative","Spores"))+
+  # scale_x_discrete(limits = c( "Vegetative","Spores"))+
   
   theme_classic(base_size = 15)+
   panel_border(color = "black")+
   
   labs(y = "Phage adsorption",
-       x='host cell type')+
+       x='Host cell type')+
   theme(axis.text = element_text(face = "bold"))
 p
 ggsave(here("plots/SPO1_adsorptionPERC_delta6.png"), p,
