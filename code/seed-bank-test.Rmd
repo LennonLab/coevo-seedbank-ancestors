@@ -66,7 +66,7 @@ dj <- d%>%
 
 ```{r}
 #plot
-d%>%
+p <- d%>%
   pivot_longer(-day, names_to = "trt", values_to = "cfu.ml") %>% 
     #adjust treatment name
   mutate(trt = if_else(trt == "manipulated", "+external seed bank", "-external seed bank") %>% fct_rev()) %>% 
@@ -95,9 +95,10 @@ d%>%
             strip.background = element_blank(),
             strip.text = element_text(face = "bold"))+
   ylab("Cm-resistant CFU (per mL)")+
-  xlab("Time (day)")+
+  xlab("Time (days)")+
   annotation_logticks(sides = "l")
   
-ggsave(here("plots","seed-bank-test.png"), width = 5, height = 4)
+ggsave(here("plots","seed-bank-test.png"), p,
+       width = 5, height = 4)
 ```
 
