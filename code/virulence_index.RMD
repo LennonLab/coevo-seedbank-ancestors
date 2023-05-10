@@ -423,7 +423,7 @@ sum.phi%>%
   theme(strip.background = element_blank(),
           strip.text = element_text(face = "bold"))+
   ylim(0,NA)+
-  xlab("host strain")+
+  xlab("Host strain")+
   ylab("Phage Virulence (Vp)")
   # ggsave(here("plots","Vir-index.png"), width = 4, height = 3)
 
@@ -453,8 +453,9 @@ d%>%
     theme(legend.position = c(.01, .95),
           legend.title = element_blank(),
           strip.background = element_blank(),
-          strip.text = element_text(face = "bold"),
-          axis.title.y = element_blank())+
+          strip.text = element_text(face = "bold")
+          # axis.title.y = element_blank()
+          )+
   scale_color_grey(guide = guide_legend(reverse = TRUE), #name = "host strain",
                    labels=c("WT" = "wild-type","dSpoIIE" = expression(Delta*italic(spoIIE))))+
   ylab("OD600")+
